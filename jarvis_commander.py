@@ -31,20 +31,20 @@ BOTS = {
     "shadow": {
         "name":    "Shadow Bot",
         "emoji":   "📈",
-        "url":     os.environ.get("SHADOW_URL", "https://shadowtrading-bot-production.up.railway.app"),
+        "url":     os.environ.get("SHADOW_URL", "https://shadowtrading-bot-production.up.railway.app").strip(),
         "status":  "/api/status",
     },
     "forex": {
         "name":    "Jarvis Forex",
         "emoji":   "💱",
-        "url":     os.environ.get("JARVIS_URL", "https://devoted-success-production-f3f9.up.railway.app"),
+        "url":     os.environ.get("JARVIS_URL", "https://devoted-success-production-f3f9.up.railway.app").strip(),
         "status":  "/api/data",
         "auth":    ("jarvis", os.environ.get("JARVIS_PASSWORD", "Destin123")),
     },
     "nexus": {
         "name":    "NEXUS",
         "emoji":   "⚡",
-        "url":     os.environ.get("NEXUS_URL", "https://nadex-stream2-production.up.railway.app"),
+        "url":     os.environ.get("NEXUS_URL", "https://nadex-stream2-production.up.railway.app").strip(),
         "status":  "/api/data",
     },
 }
