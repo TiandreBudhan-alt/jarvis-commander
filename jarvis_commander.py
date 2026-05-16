@@ -38,13 +38,13 @@ BOTS = {
         "name":    "Jarvis Forex",
         "emoji":   "💱",
         "url":     os.environ.get("JARVIS_URL", "https://devoted-success-production-f3f9.up.railway.app"),
-        "status":  "/api/status",
+        "status":  "/api/data",
     },
     "nexus": {
         "name":    "NEXUS",
         "emoji":   "⚡",
         "url":     os.environ.get("NEXUS_URL", "https://nadex-stream2-production.up.railway.app"),
-        "status":  "/api/status",
+        "status":  "/api/data",
     },
 }
 
@@ -184,23 +184,39 @@ def _fmt_shadow(s: dict) -> str:
     )
 
 def _fmt_forex(s: dict) -> str:
-    pnl  = float(s.get("total_pl", s.get("day_pnl", 0)) or 0)
-    pos  = s.get("positions", [])
-    npos = len(pos) if isinstance(pos, list) else int(pos or 0)
+    state  = s.get("state", {})
+    bal    = float(state.get("balance", 0))
+    trade  = state.get("active_trade")
+    all_t  = s.get("allTime", {})
+    pnl    = float(all_t.get("pnl", 0))
+    wins   = all_t.get("wins", 0)
+    losses = all_t.get("losses", 0)
+    paused = state.get("paused", False)
+    trade_line = f"\n  {trade['instrument']} {trade['direction']} | P&L: ${float(trade.get('unrealized_pl', 0)):+.2f}" if trade else "\n  No open trade"
     return (
         f"💱 Jarvis Forex\n"
-        f"Balance: ${float(s.get('balance',0)):,.2f} | P&L: ${pnl:+.2f}\n"
-        f"Open positions: {npos}\n"
-        f"Paused: {'Yes' if s.get('paused') else 'No'}"
+        f"Balance: ${bal:,.2f} | All-time P&L: ${pnl:+.2f}\n"
+        f"W/L: {wins}W / {losses}L | Paused: {'Yes' if paused else 'No'}"
+        + trade_line
     )
 
 def _fmt_nexus(s: dict) -> str:
-    up = "Live" if s.get("connected") else "Offline"
+    state   = s.get("state", {})
+    assets  = state.get("assets", {})
+    session = state.get("session", "?")
+    paused  = state.get("paused", False)
+    lines   = []
+    for asset, data in assets.items():
+        price = data.get("price", 0)
+        mom   = data.get("momentum", 0)
+        cci   = data.get("cci", 0)
+        dots  = data.get("sar_dots", 0)
+        lines.append(f"  {asset}: ${price:,.0f} | Mom: {mom:.0f}% | CCI: {cci:.0f} | SAR dots: {dots}")
     return (
         f"⚡ NEXUS\n"
-        f"Status: {up} | Session: {s.get('session','?')}\n"
-        f"Signals today: {s.get('signals_today',0)} | Wins: {s.get('wins_today',0)}\n"
-        f"Deposit: {'Funded' if s.get('funded') else 'Needs $250 deposit'}"
+        f"Session: {session} | Paused: {'Yes' if paused else 'No'}\n"
+        + "\n".join(lines) +
+        f"\nDeposit: Needs $250 to go live"
     )
 
 FORMATTERS = {"shadow": _fmt_shadow, "forex": _fmt_forex, "nexus": _fmt_nexus}
