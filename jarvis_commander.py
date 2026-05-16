@@ -64,11 +64,14 @@ def send_telegram(msg: str):
         log.warning("TELEGRAM_TOKEN not set — skipping")
         return
     try:
-        requests.post(
+        r = requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "Markdown"},
-            timeout=5
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
+            timeout=8
         )
+        result = r.json()
+        if not result.get("ok"):
+            log.error(f"Telegram sendMessage failed: {result}")
     except Exception as e:
         log.warning(f"Telegram error: {e}")
 
@@ -170,14 +173,14 @@ def _fmt_shadow(s: dict) -> str:
     pos    = s.get("positions_detail", [])
     lines  = ""
     for p in pos:
-        lines += f"\n  • {p['symbol']} {p.get('side','?')} @ ${p.get('entry',0):.2f} | P&L: ${p.get('pnl',0):+.2f}"
+        lines += f"\n  {p['symbol']} {p.get('side','?')} @ ${p.get('entry',0):.2f} | P&L: ${p.get('pnl',0):+.2f}"
     return (
-        f"📈 *Shadow Bot*\n"
-        f"Balance: `${s.get('balance',0):,.2f}` | Day P&L: `${s.get('day_pnl',0):+.2f}`\n"
+        f"📈 Shadow Bot\n"
+        f"Balance: ${s.get('balance',0):,.2f} | Day P&L: ${s.get('day_pnl',0):+.2f}\n"
         f"W/L: {s.get('win_today',0)}W / {s.get('loss_today',0)}L | WR: {s.get('win_rate',0)}%\n"
         f"Positions: {s.get('positions',0)}/2 | Session: {s.get('session','?')}\n"
-        f"{r_em} Regime: {regime} | Paused: {'Yes ⏸' if s.get('paused') else 'No ▶️'}"
-        + (f"\n\nOpen positions:{lines}" if lines else "")
+        f"{r_em} Regime: {regime} | Paused: {'Yes' if s.get('paused') else 'No'}"
+        + (f"\n\nOpen:{lines}" if lines else "")
     )
 
 def _fmt_forex(s: dict) -> str:
@@ -185,19 +188,19 @@ def _fmt_forex(s: dict) -> str:
     pos  = s.get("positions", [])
     npos = len(pos) if isinstance(pos, list) else int(pos or 0)
     return (
-        f"💱 *Jarvis Forex*\n"
-        f"Balance: `${float(s.get('balance',0)):,.2f}` | P&L: `${pnl:+.2f}`\n"
+        f"💱 Jarvis Forex\n"
+        f"Balance: ${float(s.get('balance',0)):,.2f} | P&L: ${pnl:+.2f}\n"
         f"Open positions: {npos}\n"
-        f"Paused: {'Yes ⏸' if s.get('paused') else 'No ▶️'}"
+        f"Paused: {'Yes' if s.get('paused') else 'No'}"
     )
 
 def _fmt_nexus(s: dict) -> str:
-    up = "✅ Live" if s.get("connected") else "❌ Offline"
+    up = "Live" if s.get("connected") else "Offline"
     return (
-        f"⚡ *NEXUS*\n"
+        f"⚡ NEXUS\n"
         f"Status: {up} | Session: {s.get('session','?')}\n"
         f"Signals today: {s.get('signals_today',0)} | Wins: {s.get('wins_today',0)}\n"
-        f"Deposit: {'✅ Funded' if s.get('funded') else '⚠️ Needs $250 deposit'}"
+        f"Deposit: {'Funded' if s.get('funded') else 'Needs $250 deposit'}"
     )
 
 FORMATTERS = {"shadow": _fmt_shadow, "forex": _fmt_forex, "nexus": _fmt_nexus}
@@ -211,7 +214,7 @@ def handle_command(text: str) -> str | None:
 
     # /status — summary of all bots from cache
     if low == "/status":
-        lines = ["🎯 *Jarvis Commander — All Agents*\n"]
+        lines = ["🎯 Jarvis Commander — All Agents\n"]
         for key, bot in BOTS.items():
             snap = _bot_snapshots.get(key)
             if snap:
@@ -219,11 +222,11 @@ def handle_command(text: str) -> str | None:
                 pos  = snap.get("positions", 0)
                 ts   = snap.get("_polled_at", "?")[:16].replace("T", " ")
                 lines.append(
-                    f"{bot['emoji']} *{bot['name']}* | P&L: `${pnl:+.2f}` | "
-                    f"Pos: {pos} | Updated: {ts}"
+                    f"{bot['emoji']} {bot['name']} | P&L: ${pnl:+.2f} | "
+                    f"Pos: {pos} | {ts}"
                 )
             else:
-                lines.append(f"{bot['emoji']} *{bot['name']}* — No data yet")
+                lines.append(f"{bot['emoji']} {bot['name']} — polling...")
         return "\n".join(lines)
 
     # /ask <bot> — live fetch from that bot
@@ -238,18 +241,18 @@ def handle_command(text: str) -> str | None:
 
     if low in ("/help", "/start"):
         return (
-            "🎯 *JARVIS COMMANDER ONLINE*\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "✅ Shadow Bot — monitoring\n"
-            "✅ Jarvis Forex — monitoring\n"
-            "✅ NEXUS — monitoring\n"
-            "✅ Anomaly detection active\n\n"
-            "*Commands:*\n"
-            "/status — all agents snapshot\n"
-            "/ask shadow — Shadow Bot live status\n"
-            "/ask forex — Jarvis Forex live status\n"
-            "/ask nexus — NEXUS live status\n"
-            "/help — this menu"
+            "JARVIS COMMANDER ONLINE\n"
+            "--------------------\n"
+            "Shadow Bot: monitoring\n"
+            "Jarvis Forex: monitoring\n"
+            "NEXUS: monitoring\n"
+            "Anomaly detection: active\n\n"
+            "Commands:\n"
+            "/status - all agents snapshot\n"
+            "/ask shadow - Shadow Bot live status\n"
+            "/ask forex - Jarvis Forex live status\n"
+            "/ask nexus - NEXUS live status\n"
+            "/help - this menu"
         )
 
     return None
@@ -330,8 +333,10 @@ def root():
 # BOOT
 # ══════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    port       = int(os.environ.get("PORT", 5100))
-    public_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    port = int(os.environ.get("PORT", 5100))
+
+    # Use env var if set, fall back to known Railway URL
+    public_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "web-production-32238.up.railway.app")
     if public_url and not public_url.startswith("http"):
         public_url = f"https://{public_url}"
 
@@ -339,19 +344,16 @@ if __name__ == "__main__":
 
     threading.Thread(target=poll_loop, daemon=True).start()
 
-    if TELEGRAM_TOKEN and public_url:
+    if TELEGRAM_TOKEN:
         register_webhook(public_url)
         send_telegram(
-            "🎯 *JARVIS COMMANDER ONLINE*\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "✅ Shadow Bot — monitoring\n"
-            "✅ Jarvis Forex — monitoring\n"
-            "✅ NEXUS — monitoring\n"
-            "✅ Anomaly detection active\n"
-            "✅ Webhook mode — instant responses\n\n"
-            "Type /help to get started"
+            "🎯 JARVIS COMMANDER ONLINE\n"
+            "--------------------\n"
+            "Shadow Bot: monitoring\n"
+            "Jarvis Forex: monitoring\n"
+            "NEXUS: monitoring\n"
+            "Anomaly detection: active\n\n"
+            "Commands: /status /ask shadow /ask forex /ask nexus /help"
         )
-    elif TELEGRAM_TOKEN and not public_url:
-        log.warning("RAILWAY_PUBLIC_DOMAIN not set — webhook not registered")
 
     app.run(host="0.0.0.0", port=port, debug=False)
