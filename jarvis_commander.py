@@ -259,22 +259,38 @@ def handle_command(text: str) -> str | None:
 # ══════════════════════════════════════════════════════════
 def telegram_poll_loop():
     global _last_update_id
+    log.info(f"Telegram poll loop starting — token={'SET' if TELEGRAM_TOKEN else 'MISSING'} chat_id={TELEGRAM_CHAT_ID}")
+    if not TELEGRAM_TOKEN:
+        log.error("TELEGRAM_TOKEN not set — polling disabled")
+        return
+    backoff = 1
     while True:
         try:
             r = requests.get(
                 f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates",
-                params={"offset": _last_update_id + 1, "timeout": 30},
-                timeout=35
+                params={"offset": _last_update_id + 1, "timeout": 10},
+                timeout=15
             )
-            for u in r.json().get("result", []):
+            data = r.json()
+            if not data.get("ok"):
+                log.error(f"Telegram getUpdates error: {data}")
+                time.sleep(backoff)
+                backoff = min(backoff * 2, 30)
+                continue
+            backoff = 1
+            for u in data.get("result", []):
                 _last_update_id = u["update_id"]
                 text = u.get("message", {}).get("text", "")
                 if text:
+                    log.info(f"Telegram received: '{text}' from {u.get('message',{}).get('from',{}).get('first_name','?')}")
                     reply = handle_command(text)
                     if reply:
                         send_telegram(reply)
         except Exception as e:
-            log.warning(f"Telegram poll: {e}")
+            log.error(f"Telegram poll error: {e}")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+            continue
         time.sleep(1)
 
 # ══════════════════════════════════════════════════════════
@@ -283,9 +299,12 @@ def telegram_poll_loop():
 @app.route("/health")
 def health():
     return jsonify({
-        "status":       "ok",
-        "bots_tracked": list(_bot_snapshots.keys()),
-        "bots_total":   len(BOTS)
+        "status":          "ok",
+        "telegram_token":  "SET" if TELEGRAM_TOKEN else "MISSING",
+        "telegram_chat":   TELEGRAM_CHAT_ID,
+        "last_update_id":  _last_update_id,
+        "bots_tracked":    list(_bot_snapshots.keys()),
+        "bots_total":      len(BOTS)
     }), 200
 
 @app.route("/api/all_status")
