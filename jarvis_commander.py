@@ -39,6 +39,7 @@ BOTS = {
         "emoji":   "💱",
         "url":     os.environ.get("JARVIS_URL", "https://devoted-success-production-f3f9.up.railway.app"),
         "status":  "/api/data",
+        "auth":    ("jarvis", os.environ.get("JARVIS_PASSWORD", "Destin123")),
     },
     "nexus": {
         "name":    "NEXUS",
@@ -79,9 +80,10 @@ def send_telegram(msg: str):
 # POLLING
 # ══════════════════════════════════════════════════════════
 def fetch_status(key: str) -> dict | None:
-    bot = BOTS[key]
+    bot  = BOTS[key]
+    auth = bot.get("auth")
     try:
-        r = requests.get(f"{bot['url']}{bot['status']}", timeout=8)
+        r = requests.get(f"{bot['url']}{bot['status']}", auth=auth, timeout=8)
         r.raise_for_status()
         return r.json()
     except Exception as e:
