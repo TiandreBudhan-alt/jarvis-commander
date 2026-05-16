@@ -236,11 +236,16 @@ def handle_command(text: str) -> str | None:
             return f"❌ {BOTS[target]['name']} not responding — check Railway"
         return FORMATTERS[target](status)
 
-    if low == "/help":
+    if low in ("/help", "/start"):
         return (
-            "🤖 *Jarvis Commander*\n"
-            "━━━━━━━━━━━━━━━\n"
-            "/status — all agents summary\n"
+            "🎯 *JARVIS COMMANDER ONLINE*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "✅ Shadow Bot — monitoring\n"
+            "✅ Jarvis Forex — monitoring\n"
+            "✅ NEXUS — monitoring\n"
+            "✅ Anomaly detection active\n\n"
+            "*Commands:*\n"
+            "/status — all agents snapshot\n"
             "/ask shadow — Shadow Bot live status\n"
             "/ask forex — Jarvis Forex live status\n"
             "/ask nexus — NEXUS live status\n"
