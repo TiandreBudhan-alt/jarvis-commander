@@ -255,56 +255,53 @@ def handle_command(text: str) -> str | None:
     return None
 
 # ══════════════════════════════════════════════════════════
-# TELEGRAM POLLING
+# TELEGRAM WEBHOOK (replaces long-polling — no conflicts)
 # ══════════════════════════════════════════════════════════
-def telegram_poll_loop():
-    global _last_update_id
-    log.info(f"Telegram poll loop starting — token={'SET' if TELEGRAM_TOKEN else 'MISSING'} chat_id={TELEGRAM_CHAT_ID}")
-    if not TELEGRAM_TOKEN:
-        log.error("TELEGRAM_TOKEN not set — polling disabled")
-        return
-    backoff = 1
-    while True:
-        try:
-            r = requests.get(
-                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates",
-                params={"offset": _last_update_id + 1, "timeout": 10},
-                timeout=15
-            )
-            data = r.json()
-            if not data.get("ok"):
-                log.error(f"Telegram getUpdates error: {data}")
-                time.sleep(backoff)
-                backoff = min(backoff * 2, 30)
-                continue
-            backoff = 1
-            for u in data.get("result", []):
-                _last_update_id = u["update_id"]
-                text = u.get("message", {}).get("text", "")
-                if text:
-                    log.info(f"Telegram received: '{text}' from {u.get('message',{}).get('from',{}).get('first_name','?')}")
-                    reply = handle_command(text)
-                    if reply:
-                        send_telegram(reply)
-        except Exception as e:
-            log.error(f"Telegram poll error: {e}")
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 30)
-            continue
-        time.sleep(1)
+def register_webhook(public_url: str):
+    """Tell Telegram to POST updates to our /telegram_webhook endpoint."""
+    webhook_url = f"{public_url}/telegram_webhook"
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook",
+            json={"url": webhook_url},
+            timeout=10
+        )
+        result = r.json()
+        if result.get("ok"):
+            log.info(f"Webhook registered: {webhook_url}")
+        else:
+            log.error(f"Webhook registration failed: {result}")
+    except Exception as e:
+        log.error(f"Webhook registration error: {e}")
 
 # ══════════════════════════════════════════════════════════
 # API ENDPOINTS
 # ══════════════════════════════════════════════════════════
+@app.route("/telegram_webhook", methods=["POST"])
+def telegram_webhook():
+    from flask import request as freq
+    try:
+        update = freq.get_json(force=True, silent=True) or {}
+        text   = update.get("message", {}).get("text", "")
+        name   = update.get("message", {}).get("from", {}).get("first_name", "?")
+        if text:
+            log.info(f"Webhook received: '{text}' from {name}")
+            reply = handle_command(text)
+            if reply:
+                send_telegram(reply)
+    except Exception as e:
+        log.error(f"Webhook handler error: {e}")
+    return jsonify({"ok": True}), 200
+
 @app.route("/health")
 def health():
     return jsonify({
-        "status":          "ok",
-        "telegram_token":  "SET" if TELEGRAM_TOKEN else "MISSING",
-        "telegram_chat":   TELEGRAM_CHAT_ID,
-        "last_update_id":  _last_update_id,
-        "bots_tracked":    list(_bot_snapshots.keys()),
-        "bots_total":      len(BOTS)
+        "status":         "ok",
+        "telegram_token": "SET" if TELEGRAM_TOKEN else "MISSING",
+        "telegram_chat":  TELEGRAM_CHAT_ID,
+        "webhook_mode":   True,
+        "bots_tracked":   list(_bot_snapshots.keys()),
+        "bots_total":     len(BOTS)
     }), 200
 
 @app.route("/api/all_status")
@@ -333,21 +330,28 @@ def root():
 # BOOT
 # ══════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5100))
-    log.info(f"Jarvis Commander starting on port {port}")
+    port       = int(os.environ.get("PORT", 5100))
+    public_url = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+    if public_url and not public_url.startswith("http"):
+        public_url = f"https://{public_url}"
 
-    threading.Thread(target=poll_loop,          daemon=True).start()
-    threading.Thread(target=telegram_poll_loop, daemon=True).start()
+    log.info(f"Jarvis Commander starting on port {port} | public_url={public_url}")
 
-    send_telegram(
-        "🎯 *JARVIS COMMANDER ONLINE*\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "✅ Shadow Bot — monitoring\n"
-        "✅ Jarvis Forex — monitoring\n"
-        "✅ NEXUS — monitoring\n"
-        "✅ Anomaly detection: loss streak, drawdown, no-trades\n"
-        "✅ Command routing: /ask shadow | /ask forex | /ask nexus\n\n"
-        "Type /help for full command list"
-    )
+    threading.Thread(target=poll_loop, daemon=True).start()
+
+    if TELEGRAM_TOKEN and public_url:
+        register_webhook(public_url)
+        send_telegram(
+            "🎯 *JARVIS COMMANDER ONLINE*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "✅ Shadow Bot — monitoring\n"
+            "✅ Jarvis Forex — monitoring\n"
+            "✅ NEXUS — monitoring\n"
+            "✅ Anomaly detection active\n"
+            "✅ Webhook mode — instant responses\n\n"
+            "Type /help to get started"
+        )
+    elif TELEGRAM_TOKEN and not public_url:
+        log.warning("RAILWAY_PUBLIC_DOMAIN not set — webhook not registered")
 
     app.run(host="0.0.0.0", port=port, debug=False)
