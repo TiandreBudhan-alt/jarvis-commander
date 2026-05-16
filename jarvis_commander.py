@@ -283,18 +283,41 @@ def register_webhook(public_url: str):
 @app.route("/telegram_webhook", methods=["POST"])
 def telegram_webhook():
     from flask import request as freq
-    try:
-        update = freq.get_json(force=True, silent=True) or {}
-        text   = update.get("message", {}).get("text", "")
-        name   = update.get("message", {}).get("from", {}).get("first_name", "?")
-        if text:
-            log.info(f"Webhook received: '{text}' from {name}")
-            reply = handle_command(text)
-            if reply:
-                send_telegram(reply)
-    except Exception as e:
-        log.error(f"Webhook handler error: {e}")
+    update = freq.get_json(force=True, silent=True) or {}
+    text   = update.get("message", {}).get("text", "")
+    name   = update.get("message", {}).get("from", {}).get("first_name", "?")
+    chat_id = str(update.get("message", {}).get("chat", {}).get("id", TELEGRAM_CHAT_ID))
+    log.info(f"Webhook: text='{text}' from={name} chat_id={chat_id}")
+    if text:
+        reply = handle_command(text)
+        log.info(f"handle_command returned: {repr(reply)[:80] if reply else 'None'}")
+        if reply:
+            try:
+                r = requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                    json={"chat_id": chat_id, "text": reply},
+                    timeout=8
+                )
+                result = r.json()
+                log.info(f"sendMessage result: ok={result.get('ok')} err={result.get('description','')}")
+            except Exception as e:
+                log.error(f"sendMessage exception: {e}")
     return jsonify({"ok": True}), 200
+
+@app.route("/test")
+def test_endpoint():
+    """Hit this to confirm the service can send Telegram messages."""
+    reply = handle_command("/start")
+    try:
+        r = requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": reply or "test ok"},
+            timeout=8
+        )
+        result = r.json()
+        return jsonify({"sent": result.get("ok"), "detail": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/health")
 def health():
