@@ -47,6 +47,12 @@ BOTS = {
         "url":     os.environ.get("NEXUS_URL", "https://nadex-stream2-production.up.railway.app").strip(),
         "status":  "/api/data",
     },
+    "dropship": {
+        "name":    "Dropship Bot",
+        "emoji":   "🛒",
+        "url":     os.environ.get("DROPSHIP_URL", "https://worker-production-197f.up.railway.app").strip(),
+        "status":  "/api/status",
+    },
 }
 
 # ══════════════════════════════════════════════════════════
@@ -221,7 +227,23 @@ def _fmt_nexus(s: dict) -> str:
         f"\nDeposit: Needs $250 to go live"
     )
 
-FORMATTERS = {"shadow": _fmt_shadow, "forex": _fmt_forex, "nexus": _fmt_nexus}
+def _fmt_dropship(s: dict) -> str:
+    pnl      = float(s.get("day_pnl", 0) or 0)
+    orders   = s.get("orders_today", 0)
+    open_o   = s.get("open_orders", 0)
+    seller   = s.get("best_seller", "N/A")
+    goal_pct = s.get("goal_pct", 0)
+    vs_yest  = float(s.get("vs_yesterday", 0) or 0)
+    trend    = "up" if vs_yest >= 0 else "down"
+    return (
+        f"🛒 Dropship Bot\n"
+        f"Today: ${pnl:.2f} profit | {orders} orders fulfilled\n"
+        f"Open orders: {open_o} pending\n"
+        f"Best seller: {seller}\n"
+        f"Goal: {goal_pct}% | {trend} ${abs(vs_yest):.2f} vs yesterday"
+    )
+
+FORMATTERS = {"shadow": _fmt_shadow, "forex": _fmt_forex, "nexus": _fmt_nexus, "dropship": _fmt_dropship}
 
 # ══════════════════════════════════════════════════════════
 # COMMAND ROUTING
@@ -257,6 +279,41 @@ def handle_command(text: str) -> str | None:
             return f"❌ {BOTS[target]['name']} not responding — check Railway"
         return FORMATTERS[target](status)
 
+    # /review — pull Shadow Bot weekly stats from Sheets
+    if low == "/review":
+        shadow_url = BOTS["shadow"]["url"]
+        try:
+            r = requests.get(f"{shadow_url}/api/weekly_review", timeout=15)
+            d = r.json()
+        except Exception as e:
+            return f"Could not fetch weekly review: {e}"
+
+        if d.get("error"):
+            return f"Review error: {d['error']}"
+        if d.get("total_trades", 0) == 0:
+            return f"No closed trades this week yet.\n{d.get('message','')}"
+
+        by_sym = d.get("by_symbol", {})
+        sym_lines = ""
+        for sym, s in by_sym.items():
+            if s["total"] > 0:
+                sym_lines += f"  {sym}: {s['wins']}W/{s['total']-s['wins']}L ({s['wr']}% WR) P&L: ${s['pnl']:+.2f}\n"
+
+        best  = d.get("best_trade", {})
+        worst = d.get("worst_trade", {})
+
+        return (
+            f"SHADOW BOT — WEEK REVIEW ({d.get('week_start','')})\n"
+            f"--------------------\n"
+            f"Trades: {d['total_trades']} | {d['wins']}W / {d['losses']}L | WR: {d['win_rate']}%\n"
+            f"Net P&L: ${d['total_pnl']:+.2f}\n"
+            f"Avg win: ${d['avg_win']:+.2f} | Avg loss: ${d['avg_loss']:+.2f}\n"
+            f"Regime: {d.get('regime','?')}\n\n"
+            f"By symbol:\n{sym_lines}"
+            f"Best: {best.get('symbol','?')} ${best.get('pnl',0):+.2f} ({best.get('reason','')})\n"
+            f"Worst: {worst.get('symbol','?')} ${worst.get('pnl',0):+.2f} ({worst.get('reason','')})"
+        )
+
     if low in ("/help", "/start"):
         return (
             "JARVIS COMMANDER ONLINE\n"
@@ -264,12 +321,15 @@ def handle_command(text: str) -> str | None:
             "Shadow Bot: monitoring\n"
             "Jarvis Forex: monitoring\n"
             "NEXUS: monitoring\n"
+            "Dropship Bot: monitoring\n"
             "Anomaly detection: active\n\n"
             "Commands:\n"
             "/status - all agents snapshot\n"
             "/ask shadow - Shadow Bot live status\n"
             "/ask forex - Jarvis Forex live status\n"
             "/ask nexus - NEXUS live status\n"
+            "/ask dropship - Dropship store status\n"
+            "/review - Shadow Bot week review from Sheets\n"
             "/help - this menu"
         )
 
