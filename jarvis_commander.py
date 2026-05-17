@@ -162,7 +162,14 @@ def poll_loop():
                     **status,
                     "_polled_at": datetime.now(ET).isoformat()
                 }
-                log.info(f"Polled {key}: P&L={status.get('day_pnl', 'N/A')} pos={status.get('positions', 'N/A')}")
+                # Forex/NEXUS nest their P&L — extract for logging
+                pnl = (status.get("day_pnl")
+                       or status.get("state", {}).get("day_pnl")
+                       or status.get("allTime", {}).get("pnl", "N/A"))
+                pos = (status.get("positions")
+                       or len(status.get("state", {}).get("assets", {}))
+                       or "N/A")
+                log.info(f"Polled {key}: P&L={pnl} pos={pos}")
                 check_anomalies(key, status)
             else:
                 if _bot_snapshots.get(key) and _cooldown_ok(key, "unreachable"):
@@ -394,6 +401,70 @@ def test_endpoint():
         )
         result = r.json()
         return jsonify({"sent": result.get("ok"), "detail": result}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/morning_briefing", methods=["POST"])
+def api_morning_briefing():
+    """n8n calls this at 9:25am ET — compiles all agent data and sends Telegram briefing."""
+    try:
+        from flask import request as freq
+        body = freq.get_json(force=True, silent=True) or {}
+        # Allow n8n to inject extra context (news, fear/greed etc)
+        extra = body.get("extra", "")
+
+        lines = ["MORNING BRIEFING\n--------------------"]
+        live_agents = 0
+
+        for key, snap in _bot_snapshots.items():
+            if not snap:
+                continue
+            live_agents += 1
+            name = BOTS[key]["name"]
+            em   = BOTS[key]["emoji"]
+            pnl  = float(snap.get("day_pnl", 0) or
+                         snap.get("state", {}).get("day_pnl", 0) or 0)
+            if key == "shadow":
+                regime = snap.get("regime", "?")
+                pos    = snap.get("positions", 0)
+                lines.append(f"{em} {name}: P&L ${pnl:+.2f} | {pos} positions | Regime {regime}")
+            elif key == "forex":
+                bal = float(snap.get("state", {}).get("balance", 0) or
+                             snap.get("balance", 0) or 0)
+                lines.append(f"{em} {name}: Balance ${bal:,.0f} | P&L ${pnl:+.2f}")
+            elif key == "nexus":
+                lines.append(f"{em} {name}: Session ready | Deposit needed to go live")
+            elif key == "dropship":
+                orders = snap.get("orders_today", 0)
+                lines.append(f"{em} {name}: P&L ${pnl:+.2f} | {orders} orders today")
+
+        lines.append(f"\n{live_agents}/{len(BOTS)} agents online")
+        if extra:
+            lines.append(f"\n{extra}")
+        lines.append("\nMarket opens 9:30am ET. Good luck today.")
+
+        msg = "\n".join(lines)
+        send_telegram(msg)
+        log.info("Morning briefing sent via n8n trigger")
+        return jsonify({"ok": True, "message": msg}), 200
+    except Exception as e:
+        log.error(f"Morning briefing error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/n8n_alert", methods=["POST"])
+def api_n8n_alert():
+    """Generic n8n → Telegram alert. POST {message: '...', level: 'info|warn|alert'}"""
+    try:
+        from flask import request as freq
+        body  = freq.get_json(force=True, silent=True) or {}
+        msg   = body.get("message", "")
+        level = body.get("level", "info")
+        icons = {"info": "ℹ️", "warn": "⚠️", "alert": "🚨"}
+        icon  = icons.get(level, "ℹ️")
+        if msg:
+            send_telegram(f"{icon} n8n: {msg}")
+            log.info(f"n8n alert sent: {msg[:60]}")
+        return jsonify({"ok": True}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
